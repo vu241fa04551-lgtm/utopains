@@ -1,0 +1,221 @@
+// UtopianScore — Phase 1 foundation schema
+// Scope: identity + core learning path (course -> module -> lesson),
+// enrollment and progress. Coding/assessments/social systems are
+// deferred to later phases (see README).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  STUDENT
+  FACULTY
+  ADMIN
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         Role     @default(STUDENT)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  coursesCreated   Course[]          @relation("CourseFaculty")
+  enrollments      Enrollment[]
+  progress         Progress[]
+  problemsAuthored PracticeProblem[] @relation("ProblemAuthor")
+  problemAttempts  ProblemAttempt[]
+
+  @@index([role])
+}
+
+model Course {
+  id          String   @id @default(cuid())
+  title       String
+  slug        String   @unique
+  description String
+  published   Boolean  @default(false)
+  facultyId   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  faculty     User         @relation("CourseFaculty", fields: [facultyId], references: [id])
+  modules     Module[]
+  enrollments Enrollment[]
+
+  @@index([facultyId])
+  @@index([published])
+}
+
+model Module {
+  id        String   @id @default(cuid())
+  title     String
+  order     Int      @default(0)
+  courseId  String
+  createdAt DateTime @default(now())
+
+  course  Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  lessons Lesson[]
+
+  @@index([courseId])
+}
+
+model Lesson {
+  id        String   @id @default(cuid())
+  title     String
+  content   String
+  order     Int      @default(0)
+  moduleId  String
+  createdAt DateTime @default(now())
+
+  module   Module     @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  progress Progress[]
+
+  @@index([moduleId])
+}
+
+model Enrollment {
+  id        String   @id @default(cuid())
+  userId    String
+  courseId  String
+  createdAt DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, courseId])
+  @@index([courseId])
+}
+
+model Progress {
+  id          String    @id @default(cuid())
+  userId      String
+  lessonId    String
+  completed   Boolean   @default(false)
+  completedAt DateTime?
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, lessonId])
+  @@index([lessonId])
+}
+
+// ── Phase 3: Practice domain ────────────────────────────────────────
+// MCQ problems are fully real end-to-end: grading and persistence work.
+// Coding problems persist real content and real saved submissions, but
+// execution (Run/Submit against test cases) is NOT implemented — there
+// is no sandboxed worker in this environment. See README "Phase 3" for
+// why, and AttemptOutcome.UNGRADED below for how that's represented
+// rather than faked.
+
+enum PracticeDifficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum PracticeType {
+  MCQ
+  CODING
+}
+
+enum AttemptOutcome {
+  CORRECT
+  INCORRECT
+  UNGRADED // coding attempts: code was saved, not executed/graded
+}
+
+model Skill {
+  id       String            @id @default(cuid())
+  name     String
+  slug     String            @unique
+  problems PracticeProblem[]
+}
+
+model PracticeProblem {
+  id          String             @id @default(cuid())
+  title       String
+  slug        String             @unique
+  description String
+  difficulty  PracticeDifficulty @default(EASY)
+  type        PracticeType
+  published   Boolean            @default(false)
+  explanation String?
+  createdById String
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  // MCQ-specific
+  options QuestionOption[]
+
+  // Coding-specific (content only — no execution)
+  starterCode String?
+  constraints String?
+  examples    String?
+  testCases   TestCase[]
+
+  createdBy User             @relation("ProblemAuthor", fields: [createdById], references: [id])
+  skills    Skill[]
+  attempts  ProblemAttempt[]
+
+  @@index([type])
+  @@index([published])
+  @@index([difficulty])
+  @@index([createdById])
+}
+
+model QuestionOption {
+  id        String  @id @default(cuid())
+  problemId String
+  text      String
+  isCorrect Boolean @default(false)
+  order     Int     @default(0)
+
+  problem PracticeProblem @relation(fields: [problemId], references: [id], onDelete: Cascade)
+
+  @@index([problemId])
+}
+
+model TestCase {
+  id             String  @id @default(cuid())
+  problemId      String
+  input          String
+  expectedOutput String
+  isHidden       Boolean @default(false)
+  order          Int     @default(0)
+
+  problem PracticeProblem @relation(fields: [problemId], references: [id], onDelete: Cascade)
+
+  @@index([problemId])
+}
+
+model ProblemAttempt {
+  id        String   @id @default(cuid())
+  userId    String
+  problemId String
+  createdAt DateTime @default(now())
+
+  // MCQ
+  selectedOptionId String?
+
+  // Coding (saved, not executed)
+  sourceCode String?
+  language   String?
+
+  outcome AttemptOutcome
+
+  user    User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  problem PracticeProblem @relation(fields: [problemId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([problemId])
+  @@index([userId, problemId])
+}

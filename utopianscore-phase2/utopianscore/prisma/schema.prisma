@@ -1,0 +1,107 @@
+// UtopianScore — Phase 1 foundation schema
+// Scope: identity + core learning path (course -> module -> lesson),
+// enrollment and progress. Coding/assessments/social systems are
+// deferred to later phases (see README).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  STUDENT
+  FACULTY
+  ADMIN
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         Role     @default(STUDENT)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  coursesCreated Course[]     @relation("CourseFaculty")
+  enrollments    Enrollment[]
+  progress       Progress[]
+
+  @@index([role])
+}
+
+model Course {
+  id          String   @id @default(cuid())
+  title       String
+  slug        String   @unique
+  description String
+  published   Boolean  @default(false)
+  facultyId   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  faculty     User         @relation("CourseFaculty", fields: [facultyId], references: [id])
+  modules     Module[]
+  enrollments Enrollment[]
+
+  @@index([facultyId])
+  @@index([published])
+}
+
+model Module {
+  id        String   @id @default(cuid())
+  title     String
+  order     Int      @default(0)
+  courseId  String
+  createdAt DateTime @default(now())
+
+  course  Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  lessons Lesson[]
+
+  @@index([courseId])
+}
+
+model Lesson {
+  id        String   @id @default(cuid())
+  title     String
+  content   String
+  order     Int      @default(0)
+  moduleId  String
+  createdAt DateTime @default(now())
+
+  module   Module     @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  progress Progress[]
+
+  @@index([moduleId])
+}
+
+model Enrollment {
+  id        String   @id @default(cuid())
+  userId    String
+  courseId  String
+  createdAt DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, courseId])
+  @@index([courseId])
+}
+
+model Progress {
+  id          String    @id @default(cuid())
+  userId      String
+  lessonId    String
+  completed   Boolean   @default(false)
+  completedAt DateTime?
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, lessonId])
+  @@index([lessonId])
+}
